@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ConversationBufferMemory
-from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 import os
 from dotenv import load_dotenv
 import json
@@ -13,13 +13,13 @@ load_dotenv()
 
 app = FastAPI()
 
-# ✅ Load LLM (UPDATED MODEL)
+# ✅ LLM (stable + fast)
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
-# ✅ Memory store (per user)
+# ✅ Memory per user
 memory_store = {}
 
 def get_memory(user_id):
@@ -30,12 +30,12 @@ def get_memory(user_id):
         )
     return memory_store[user_id]
 
-# ✅ Request format
+# ✅ Request model
 class Input(BaseModel):
     message: str
     user_id: str
 
-# ✅ Prompt (STRICT JSON OUTPUT)
+# ✅ Prompt (NOW INCLUDES crisis_type)
 prompt = PromptTemplate(
     input_variables=["message", "chat_history"],
     template="""
@@ -48,59 +48,70 @@ User message:
 {message}
 
 Tasks:
-1. Determine if the request is an emergency or not
-2. Extract occupation if mentioned
-3. If not mentioned, infer carefully
-4. If unclear, set is_occupation_provided = false
+1. Determine intent:
+   - emergency OR non_emergency
+2. Extract occupation if clearly mentioned (doctor, police, firefighter, etc.)
+3. Determine crisis_type:
+   - medical → injury, illness, doctor, ambulance
+   - fire → fire, burning
+   - accident → crash, collision
+   - crime → theft, attack, violence
+   - natural_disaster → flood, earthquake, storm
+4. If occupation not mentioned → infer carefully
+5. If unclear → is_occupation_provided = false
 
 Rules:
-- If user clearly mentions occupation → use it
-- If unclear → do NOT guess randomly
-- If not emergency → set is_valid_request = false
-- If it involves danger, injury, medical need, accident → intent = emergency
-- Otherwise → intent = non_emergency
+- If occupation is clearly mentioned → use it
+- Always assign a valid crisis_type
+- If not emergency → is_valid_request = false
 
 Return ONLY valid JSON.
-Do NOT add explanation text.
-Do NOT add markdown.
-Only raw JSON.
+No explanation. No markdown.
 
 Format:
 {{
  "intent": "",
  "occupation": "",
+ "crisis_type": "",
  "is_occupation_provided": true,
  "is_valid_request": true
 }}
 """
 )
 
-# ✅ Safe JSON extractor (prevents crashes)
+# ✅ Safe JSON extractor
 def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        return match.group()
-    return "{}"
+    return match.group() if match else "{}"
 
-# ✅ Health check route
+# ✅ Health route
 @app.get("/")
 def home():
     return {"message": "Crisis Match Backend Running 🚀"}
 
-# ✅ Main AI endpoint
+# ✅ Main endpoint
 @app.post("/agent")
 def run_agent(input: Input):
     memory = get_memory(input.user_id)
 
-    chain = LLMChain(
-        llm=llm,
-        prompt=prompt,
-        memory=memory
+    # Build chain (new style, no deprecated LLMChain)
+    chain = prompt | llm | StrOutputParser()
+
+    # Inject memory manually
+    chat_history = memory.load_memory_variables({}).get("chat_history", "")
+
+    result = chain.invoke({
+        "message": input.message,
+        "chat_history": chat_history
+    })
+
+    # Save to memory
+    memory.save_context(
+        {"input": input.message},
+        {"output": result}
     )
 
-    result = chain.run(message=input.message)
-
-    # ✅ Safe parsing
+    # Parse JSON safely
     try:
         json_text = extract_json(result)
         parsed = json.loads(json_text)
@@ -108,10 +119,9 @@ def run_agent(input: Input):
         parsed = {
             "intent": "emergency",
             "occupation": "",
+            "crisis_type": "medical",
             "is_occupation_provided": False,
             "is_valid_request": True
         }
 
-    return parsed  # ✅ clean response for n8n
-
-
+    return parsed
