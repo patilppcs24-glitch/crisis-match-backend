@@ -64,12 +64,12 @@ Do NOT add markdown.
 Only raw JSON.
 
 Format:
-{
+{{
  "intent": "",
  "occupation": "",
  "is_occupation_provided": true,
  "is_valid_request": true
-}
+}}
 """
 )
 
