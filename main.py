@@ -48,7 +48,7 @@ User message:
 {message}
 
 Tasks:
-1. Extract intent
+1. Determine if the request is an emergency or not
 2. Extract occupation if mentioned
 3. If not mentioned, infer carefully
 4. If unclear, set is_occupation_provided = false
@@ -57,6 +57,8 @@ Rules:
 - If user clearly mentions occupation → use it
 - If unclear → do NOT guess randomly
 - If not emergency → set is_valid_request = false
+- If it involves danger, injury, medical need, accident → intent = emergency
+- Otherwise → intent = non_emergency
 
 Return ONLY valid JSON.
 Do NOT add explanation text.
