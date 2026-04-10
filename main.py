@@ -13,9 +13,9 @@ load_dotenv()
 
 app = FastAPI()
 
-# ✅ LLM (stable + fast)
+# ✅ LLM
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model="gemini-1.5-flash",
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
@@ -30,13 +30,24 @@ def get_memory(user_id):
         )
     return memory_store[user_id]
 
-# ✅ Request model
+# =========================
+# ✅ MODELS
+# =========================
+
 class Input(BaseModel):
     message: str
     user_id: str
 
-# ✅ Prompt (NOW INCLUDES crisis_type)
-prompt = PromptTemplate(
+class AssistInput(BaseModel):
+    message: str
+    user_id: str
+    crisis_type: str
+
+# =========================
+# ✅ AGENT PROMPT
+# =========================
+
+agent_prompt = PromptTemplate(
     input_variables=["message", "chat_history"],
     template="""
 You are an intelligent emergency assistant.
@@ -79,25 +90,71 @@ Format:
 """
 )
 
-# ✅ Safe JSON extractor
+# =========================
+# ✅ ASSIST PROMPT
+# =========================
+
+assist_prompt = PromptTemplate(
+    input_variables=["message", "chat_history", "crisis_type"],
+    template="""
+You are a calm emergency assistant helping a victim.
+
+Crisis type: {crisis_type}
+
+Chat history:
+{chat_history}
+
+User message:
+{message}
+
+Your job:
+- Give clear, short, step-by-step safety instructions
+- Be calm and reassuring
+- Focus only on immediate safety
+- Keep response short (2–4 steps)
+
+Guidelines:
+- medical → stop bleeding, check breathing
+- fire → leave area, avoid smoke
+- accident → stay still, assess injuries
+- crime → move to safe place
+- natural_disaster → move to safe zone
+
+Rules:
+- Do NOT give long paragraphs
+- Do NOT panic the user
+- Use simple steps
+
+Respond in numbered steps only.
+"""
+)
+
+# =========================
+# ✅ JSON EXTRACTOR
+# =========================
+
 def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
     return match.group() if match else "{}"
 
-# ✅ Health route
+# =========================
+# ✅ HEALTH CHECK
+# =========================
+
 @app.get("/")
 def home():
     return {"message": "Crisis Match Backend Running 🚀"}
 
-# ✅ Main endpoint
+# =========================
+# ✅ AGENT ENDPOINT
+# =========================
+
 @app.post("/agent")
 def run_agent(input: Input):
     memory = get_memory(input.user_id)
 
-    # Build chain (new style, no deprecated LLMChain)
-    chain = prompt | llm | StrOutputParser()
+    chain = agent_prompt | llm | StrOutputParser()
 
-    # Inject memory manually
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
     result = chain.invoke({
@@ -105,13 +162,11 @@ def run_agent(input: Input):
         "chat_history": chat_history
     })
 
-    # Save to memory
     memory.save_context(
         {"input": input.message},
         {"output": result}
     )
 
-    # Parse JSON safely
     try:
         json_text = extract_json(result)
         parsed = json.loads(json_text)
@@ -125,3 +180,30 @@ def run_agent(input: Input):
         }
 
     return parsed
+
+# =========================
+# ✅ ASSIST ENDPOINT
+# =========================
+
+@app.post("/assist")
+def assist_user(input: AssistInput):
+    memory = get_memory(input.user_id)
+
+    chain = assist_prompt | llm | StrOutputParser()
+
+    chat_history = memory.load_memory_variables({}).get("chat_history", "")
+
+    result = chain.invoke({
+        "message": input.message,
+        "chat_history": chat_history,
+        "crisis_type": input.crisis_type
+    })
+
+    memory.save_context(
+        {"input": input.message},
+        {"output": result}
+    )
+
+    return {
+        "assistant_message": result
+    }
