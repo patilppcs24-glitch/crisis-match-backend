@@ -41,7 +41,6 @@ class Input(BaseModel):
 class AssistInput(BaseModel):
     message: str
     user_id: str
-    crisis_type: str
 
 # =========================
 # ✅ AGENT PROMPT
@@ -95,11 +94,9 @@ Format:
 # =========================
 
 assist_prompt = PromptTemplate(
-    input_variables=["message", "chat_history", "crisis_type"],
+    input_variables=["message", "chat_history"],
     template="""
 You are a calm emergency assistant helping a victim.
-
-Crisis type: {crisis_type}
 
 Chat history:
 {chat_history}
@@ -107,23 +104,31 @@ Chat history:
 User message:
 {message}
 
-Your job:
-- Give clear, short, step-by-step safety instructions
-- Be calm and reassuring
-- Focus only on immediate safety
-- Keep response short (2–4 steps)
+Tasks:
+1. Understand the situation
+2. Identify crisis type internally:
+   - medical → injury, bleeding, illness
+   - fire → fire, smoke
+   - accident → crash, collision
+   - crime → attack, danger
+   - natural_disaster → flood, earthquake
 
-Guidelines:
-- medical → stop bleeding, check breathing
-- fire → leave area, avoid smoke
-- accident → stay still, assess injuries
-- crime → move to safe place
-- natural_disaster → move to safe zone
+3. Give immediate safety instructions
 
 Rules:
-- Do NOT give long paragraphs
-- Do NOT panic the user
-- Use simple steps
+- Be calm and reassuring
+- Give 2–4 short actionable steps
+- Focus on immediate safety
+- Do NOT mention crisis type explicitly
+- Do NOT ask unnecessary questions
+- Do NOT give long explanations
+
+Examples:
+Medical → apply pressure, stop bleeding
+Fire → exit building, avoid smoke
+Accident → stay still, check injuries
+Crime → move to safe place
+Natural disaster → go to safe zone
 
 Respond in numbered steps only.
 """
@@ -195,8 +200,7 @@ def assist_user(input: AssistInput):
 
     result = chain.invoke({
         "message": input.message,
-        "chat_history": chat_history,
-        "crisis_type": input.crisis_type
+        "chat_history": chat_history
     })
 
     memory.save_context(
