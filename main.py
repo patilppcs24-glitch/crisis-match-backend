@@ -13,7 +13,11 @@ load_dotenv()
 app = FastAPI()
 
 # Load LLM
-llm = ChatGoogleGenerativeAI(model="gemini-pro")
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-pro",
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
 
 # 🔥 memory store per user
 memory_store = {}
