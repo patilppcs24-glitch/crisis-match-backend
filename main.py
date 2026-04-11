@@ -99,7 +99,7 @@ assist_prompt = PromptTemplate(
     template="""
 You are a calm emergency assistant.
 
-Use the following trusted safety guidelines:
+Use ONLY the trusted safety guidelines below:
 {context}
 
 Chat history:
@@ -109,14 +109,15 @@ User message:
 {message}
 
 Instructions:
-- Give short, step-by-step safety instructions
-- Use the provided context
+- Give short, clear, step-by-step safety instructions
 - Be calm and reassuring
+- Prioritize life-saving steps
 - Keep response 2–4 steps
+- If context is missing, still give safe general advice
 
 Do NOT:
 - hallucinate
-- give long explanations
+- give long paragraphs
 
 Respond in numbered steps only.
 """
@@ -186,8 +187,10 @@ def assist_user(input: AssistInput):
 
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
-    # 🔥 GET CONTEXT FROM RAG
+    # 🔥 RAG CONTEXT
     context = get_context(input.message)
+
+    print("🔍 CONTEXT:", context[:500])  # debug
 
     result = chain.invoke({
         "message": input.message,
