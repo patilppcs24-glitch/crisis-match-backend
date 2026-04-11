@@ -1,9 +1,12 @@
 from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import FastEmbedEmbeddings
 
-# 🔥 NO EMBEDDINGS HERE
+# ✅ lightweight + accurate
+embeddings = FastEmbedEmbeddings()
+
 vectorstore = FAISS.load_local(
     "faiss_index",
-    embeddings=None,  # ❗ IMPORTANT
+    embeddings,
     allow_dangerous_deserialization=True
 )
 
