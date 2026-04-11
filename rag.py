@@ -3,7 +3,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # ✅ Load embeddings
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004")
 
 # ✅ Load Firecrawl data
 with open("firecrawl_data.json", "r") as f:
