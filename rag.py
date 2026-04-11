@@ -13,6 +13,27 @@ vectorstore = FAISS.load_local(
 # 🔥 increase recall
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
+def rerank_docs(query, docs, llm):
+    combined = "\n\n".join(docs)
+
+    prompt = f"""
+You are an expert emergency assistant.
+
+User query:
+{query}
+
+Here are some safety guidelines:
+
+{combined}
+
+Select ONLY the most relevant 2–3 pieces of information.
+Return clean, actionable steps only.
+Do not include irrelevant info.
+"""
+
+    response = llm.invoke(prompt)
+
+    return response.content if hasattr(response, "content") else str(response)
 
 # 🧠 STEP 1 — detect category
 def detect_query_category(query):
@@ -38,7 +59,7 @@ def enhance_query(query, category):
 
 
 # 🧠 STEP 3 — main retrieval
-def get_context(query):
+def get_context(query, llm):
     category = detect_query_category(query)
 
     enhanced_query = enhance_query(query, category)
@@ -51,15 +72,23 @@ def get_context(query):
         if f"[{category}]" in doc.page_content
     ]
 
-    # fallback if empty
     if not filtered:
         filtered = [doc.page_content for doc in docs]
 
-    # 🔥 STEP 5 — priority sorting (important lines first)
+    # 🔥 STEP 5 — priority sorting
     if category == "medical":
         filtered = sorted(filtered, key=lambda x: "pressure" in x.lower(), reverse=True)
     elif category == "fire":
         filtered = sorted(filtered, key=lambda x: "leave" in x.lower(), reverse=True)
 
-    # 🔥 STEP 6 — return best chunks only
-    return "\n".join(filtered[:3])
+    # 🔥 STEP 6 — TAKE TOP 5 FOR RERANKING
+    top_docs = filtered[:5]
+
+    # ⚡ OPTIMIZATION (skip reranking if already clean)
+    if len(top_docs) <= 2:
+        return "\n".join(top_docs)
+
+    # 🔥 STEP 7 — LLM RERANKING
+    context = rerank_docs(query, top_docs, llm)
+
+    return context
