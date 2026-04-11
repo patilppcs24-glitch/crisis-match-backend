@@ -188,7 +188,7 @@ def assist_user(input: AssistInput):
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
     # 🔥 RAG CONTEXT
-    context = get_context(input.message)
+    context = get_context(input.message, llm)
 
     print("🔍 CONTEXT:", context[:500])  # debug
 
