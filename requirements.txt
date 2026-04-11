@@ -10,3 +10,4 @@ firecrawl-py
 faiss-cpu
 langchain-community
 sentence-transformers
+torch
