@@ -1,3 +1,4 @@
+from rag import get_context
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -94,9 +95,12 @@ Format:
 # =========================
 
 assist_prompt = PromptTemplate(
-    input_variables=["message", "chat_history"],
+    input_variables=["message", "chat_history", "context"],
     template="""
-You are a calm emergency assistant helping a victim.
+You are a calm emergency assistant.
+
+Use the following trusted safety guidelines:
+{context}
 
 Chat history:
 {chat_history}
@@ -104,31 +108,15 @@ Chat history:
 User message:
 {message}
 
-Tasks:
-1. Understand the situation
-2. Identify crisis type internally:
-   - medical → injury, bleeding, illness
-   - fire → fire, smoke
-   - accident → crash, collision
-   - crime → attack, danger
-   - natural_disaster → flood, earthquake
-
-3. Give immediate safety instructions
-
-Rules:
+Instructions:
+- Give short, step-by-step safety instructions
+- Use the provided context
 - Be calm and reassuring
-- Give 2–4 short actionable steps
-- Focus on immediate safety
-- Do NOT mention crisis type explicitly
-- Do NOT ask unnecessary questions
-- Do NOT give long explanations
+- Keep response 2–4 steps
 
-Examples:
-Medical → apply pressure, stop bleeding
-Fire → exit building, avoid smoke
-Accident → stay still, check injuries
-Crime → move to safe place
-Natural disaster → go to safe zone
+Do NOT:
+- hallucinate
+- give long explanations
 
 Respond in numbered steps only.
 """
@@ -198,9 +186,13 @@ def assist_user(input: AssistInput):
 
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
+    # 🔥 GET CONTEXT FROM RAG
+    context = get_context(input.message)
+
     result = chain.invoke({
         "message": input.message,
-        "chat_history": chat_history
+        "chat_history": chat_history,
+        "context": context
     })
 
     memory.save_context(
