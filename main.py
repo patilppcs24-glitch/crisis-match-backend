@@ -114,10 +114,13 @@ Instructions:
 - Prioritize life-saving steps
 - Keep response 2–4 steps
 - If context is missing, still give safe general advice
+- Use previous messages to understand user situation.
+
 
 Do NOT:
 - hallucinate
 - give long paragraphs
+- repeat instructions
 
 Respond in numbered steps only.
 """
