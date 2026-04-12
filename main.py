@@ -125,23 +125,29 @@ Tasks:
 1. Determine intent:
    - emergency OR non_emergency
 
-2. Extract occupation ONLY from the allowed list above
+2. Extract occupation ONLY if EXPLICITLY mentioned in user message
+   Examples:
+   - "call doctor" → doctor
+   - "need police" → police
 
-3. If occupation not directly mentioned:
-   - Choose BEST match from allowed list
+3. If occupation NOT explicitly mentioned:
+   - occupation = ""
+   - is_occupation_provided = false
 
-4. Determine crisis_type:
-   - medical → injury, illness, doctor
+4. If occupation IS mentioned:
+   - is_occupation_provided = true
+
+5. Determine crisis_type:
+   - medical → injury, illness
    - fire → fire, burning
-   - accident → crash, collision
+   - accident → crash
    - crime → theft, attack
    - natural_disaster → flood, earthquake
 
 Rules:
-- NEVER generate a new occupation
-- ALWAYS return one occupation from allowed list
-- If unsure → choose closest match
-- If not emergency → is_valid_request = false
+- NEVER guess occupation
+- NEVER infer occupation from crisis_type
+- ONLY use occupation if clearly written in user message
 
 Return ONLY valid JSON.
 
@@ -155,7 +161,6 @@ Format:
 }}
 """
 )
-
 # =========================
 # ✅ ASSIST PROMPT
 # =========================
@@ -238,7 +243,14 @@ def run_agent(input: Input):
         }
 
     # ✅ enforce occupation restriction
-    parsed["occupation"] = validate_occupation(parsed.get("occupation", ""))
+    occupation = parsed.get("occupation", "").strip()
+
+if occupation:
+    parsed["occupation"] = validate_occupation(occupation)
+    parsed["is_occupation_provided"] = True
+else:
+    parsed["occupation"] = ""
+    parsed["is_occupation_provided"] = False
 
     return parsed
 
