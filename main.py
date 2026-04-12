@@ -108,18 +108,18 @@ class AssistInput(BaseModel):
 # ✅ AGENT PROMPT
 # =========================
 agent_prompt = PromptTemplate(
-    input_variables=["message", "chat_history"],
-    template=f"""
+    input_variables=["message", "chat_history", "allowed_occupations"],
+    template="""
 You are an intelligent emergency assistant.
 
 Chat history:
-{{chat_history}}
+{chat_history}
 
 User message:
-{{message}}
+{message}
 
 Allowed occupations:
-{ALLOWED_OCCUPATIONS}
+{allowed_occupations}
 
 Tasks:
 1. Determine intent:
@@ -215,9 +215,10 @@ def run_agent(input: Input):
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
     result = chain.invoke({
-        "message": input.message,
-        "chat_history": chat_history
-    })
+    "message": input.message,
+    "chat_history": chat_history,
+    "allowed_occupations": ALLOWED_OCCUPATIONS
+})
 
     memory.save_context(
         {"input": input.message},
