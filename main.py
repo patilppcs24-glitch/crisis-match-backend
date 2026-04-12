@@ -220,10 +220,10 @@ def run_agent(input: Input):
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
     result = chain.invoke({
-    "message": input.message,
-    "chat_history": chat_history,
-    "allowed_occupations": ALLOWED_OCCUPATIONS
-})
+        "message": input.message,
+        "chat_history": chat_history,
+        "allowed_occupations": ALLOWED_OCCUPATIONS
+    })
 
     memory.save_context(
         {"input": input.message},
@@ -236,24 +236,23 @@ def run_agent(input: Input):
     except:
         parsed = {
             "intent": "emergency",
-            "occupation": "paramedic",
+            "occupation": "",
             "crisis_type": "medical",
             "is_occupation_provided": False,
             "is_valid_request": True
         }
 
-    # ✅ enforce occupation restriction
+    # ✅ FIXED LOGIC (INSIDE FUNCTION)
     occupation = parsed.get("occupation", "").strip()
 
-if occupation:
-    parsed["occupation"] = validate_occupation(occupation)
-    parsed["is_occupation_provided"] = True
-else:
-    parsed["occupation"] = ""
-    parsed["is_occupation_provided"] = False
+    if occupation:
+        parsed["occupation"] = validate_occupation(occupation)
+        parsed["is_occupation_provided"] = True
+    else:
+        parsed["occupation"] = ""
+        parsed["is_occupation_provided"] = False
 
     return parsed
-
 # =========================
 # ✅ ASSIST ENDPOINT
 # =========================
