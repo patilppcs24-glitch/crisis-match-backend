@@ -14,13 +14,17 @@ load_dotenv()
 
 app = FastAPI()
 
+# =========================
 # ✅ LLM
+# =========================
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
-# ✅ Memory per user
+# =========================
+# ✅ MEMORY
+# =========================
 memory_store = {}
 
 def get_memory(user_id):
@@ -32,9 +36,66 @@ def get_memory(user_id):
     return memory_store[user_id]
 
 # =========================
+# ✅ ALLOWED OCCUPATIONS
+# =========================
+ALLOWED_OCCUPATIONS = [
+    "doctor",
+    "paramedic",
+    "emergency_medical_technician (EMT)",
+    "ambulance",
+    "nurse",
+    "firebrigade",
+    "burn_specialist",
+    "NDRF",
+    "civil_engineer",
+    "heavy_machinery_operator",
+    "traffic_police",
+    "tow_truck_operator",
+    "police",
+    "security"
+]
+
+# =========================
+# ✅ FALLBACK MAPPING
+# =========================
+FALLBACK_MAPPING = {
+    "firefighter": "firebrigade",
+    "fireman": "firebrigade",
+    "emt": "emergency_medical_technician (EMT)",
+    "medic": "paramedic",
+    "doctor": "doctor",
+    "cop": "police",
+    "policeman": "police",
+    "ambulance driver": "ambulance",
+    "rescue team": "NDRF"
+}
+
+def validate_occupation(occupation: str):
+    if not occupation:
+        return "paramedic"  # safe default
+
+    occupation = occupation.strip()
+
+    # ✅ exact match
+    if occupation in ALLOWED_OCCUPATIONS:
+        return occupation
+
+    # ✅ fallback mapping
+    lower = occupation.lower()
+    if lower in FALLBACK_MAPPING:
+        return FALLBACK_MAPPING[lower]
+
+    # ✅ fuzzy fallback (contains match)
+    for allowed in ALLOWED_OCCUPATIONS:
+        if lower in allowed.lower():
+            return allowed
+
+    # ✅ final fallback
+    return "paramedic"
+
+# =========================
 # ✅ MODELS
 # =========================
-
 class Input(BaseModel):
     message: str
     user_id: str
@@ -46,38 +107,43 @@ class AssistInput(BaseModel):
 # =========================
 # ✅ AGENT PROMPT
 # =========================
-
 agent_prompt = PromptTemplate(
     input_variables=["message", "chat_history"],
-    template="""
+    template=f"""
 You are an intelligent emergency assistant.
 
 Chat history:
-{chat_history}
+{{chat_history}}
 
 User message:
-{message}
+{{message}}
+
+Allowed occupations:
+{ALLOWED_OCCUPATIONS}
 
 Tasks:
 1. Determine intent:
    - emergency OR non_emergency
-2. Extract occupation if clearly mentioned (doctor, police, firefighter, etc.)
-3. Determine crisis_type:
-   - medical → injury, illness, doctor, ambulance
+
+2. Extract occupation ONLY from the allowed list above
+
+3. If occupation not directly mentioned:
+   - Choose BEST match from allowed list
+
+4. Determine crisis_type:
+   - medical → injury, illness, doctor
    - fire → fire, burning
    - accident → crash, collision
-   - crime → theft, attack, violence
-   - natural_disaster → flood, earthquake, storm
-4. If occupation not mentioned → infer carefully
-5. If unclear → is_occupation_provided = false
+   - crime → theft, attack
+   - natural_disaster → flood, earthquake
 
 Rules:
-- If occupation is clearly mentioned → use it
-- Always assign a valid crisis_type
+- NEVER generate a new occupation
+- ALWAYS return one occupation from allowed list
+- If unsure → choose closest match
 - If not emergency → is_valid_request = false
 
 Return ONLY valid JSON.
-No explanation. No markdown.
 
 Format:
 {{
@@ -93,7 +159,6 @@ Format:
 # =========================
 # ✅ ASSIST PROMPT
 # =========================
-
 assist_prompt = PromptTemplate(
     input_variables=["message", "chat_history", "context"],
     template="""
@@ -114,8 +179,6 @@ Instructions:
 - Prioritize life-saving steps
 - Keep response 2–4 steps
 - If context is missing, still give safe general advice
-- Use previous messages to understand user situation.
-
 
 Do NOT:
 - hallucinate
@@ -129,7 +192,6 @@ Respond in numbered steps only.
 # =========================
 # ✅ JSON EXTRACTOR
 # =========================
-
 def extract_json(text):
     match = re.search(r"\{.*\}", text, re.DOTALL)
     return match.group() if match else "{}"
@@ -137,7 +199,6 @@ def extract_json(text):
 # =========================
 # ✅ HEALTH CHECK
 # =========================
-
 @app.get("/")
 def home():
     return {"message": "Crisis Match Backend Running 🚀"}
@@ -145,7 +206,6 @@ def home():
 # =========================
 # ✅ AGENT ENDPOINT
 # =========================
-
 @app.post("/agent")
 def run_agent(input: Input):
     memory = get_memory(input.user_id)
@@ -170,18 +230,20 @@ def run_agent(input: Input):
     except:
         parsed = {
             "intent": "emergency",
-            "occupation": "",
+            "occupation": "paramedic",
             "crisis_type": "medical",
             "is_occupation_provided": False,
             "is_valid_request": True
         }
+
+    # ✅ enforce occupation restriction
+    parsed["occupation"] = validate_occupation(parsed.get("occupation", ""))
 
     return parsed
 
 # =========================
 # ✅ ASSIST ENDPOINT
 # =========================
-
 @app.post("/assist")
 def assist_user(input: AssistInput):
     memory = get_memory(input.user_id)
@@ -193,7 +255,7 @@ def assist_user(input: AssistInput):
     # 🔥 RAG CONTEXT
     context = get_context(input.message, llm)
 
-    print("🔍 CONTEXT:", context[:500])  # debug
+    print("🔍 CONTEXT:", context[:300])
 
     result = chain.invoke({
         "message": input.message,
