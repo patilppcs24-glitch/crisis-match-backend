@@ -15,14 +15,13 @@ load_dotenv()
 app = FastAPI()
 
 # =========================
-# ✅ LLM (OPENAI)
+# ✅ LLM (OPENAI FIXED)
 # =========================
 llm = ChatOpenAI(
     model="gpt-4o-mini",
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv("OPENAI_API_KEY"),  # ✅ FIXED (important)
     temperature=0.2,
-    max_retries=2,
-    timeout=10
+    max_retries=2
 )
 
 # =========================
@@ -42,20 +41,10 @@ def get_memory(user_id):
 # ✅ ALLOWED OCCUPATIONS
 # =========================
 ALLOWED_OCCUPATIONS = [
-    "doctor",
-    "paramedic",
-    "emergency_medical_technician (EMT)",
-    "ambulance",
-    "nurse",
-    "firebrigade",
-    "burn_specialist",
-    "NDRF",
-    "civil_engineer",
-    "heavy_machinery_operator",
-    "traffic_police",
-    "tow_truck_operator",
-    "police",
-    "security"
+    "doctor", "paramedic", "emergency_medical_technician (EMT)",
+    "ambulance", "nurse", "firebrigade", "burn_specialist",
+    "NDRF", "civil_engineer", "heavy_machinery_operator",
+    "traffic_police", "tow_truck_operator", "police", "security"
 ]
 
 # =========================
@@ -121,31 +110,13 @@ Allowed occupations:
 {allowed_occupations}
 
 Tasks:
-1. Determine intent:
-   - emergency OR non_emergency
-
-2. Extract occupation ONLY if EXPLICITLY mentioned in user message
-
-3. If occupation NOT explicitly mentioned:
-   - occupation = ""
-   - is_occupation_provided = false
-
-4. If occupation IS mentioned:
-   - is_occupation_provided = true
-
-5. Determine crisis_type:
-   - medical
-   - fire
-   - accident
-   - crime
-   - natural_disaster
+1. Determine intent (emergency / non_emergency)
+2. Extract occupation ONLY if explicitly mentioned
+3. Determine crisis_type (medical, fire, accident, crime, natural_disaster)
 
 Rules:
 - NEVER guess occupation
-- NEVER infer occupation
-- ONLY use occupation if clearly written
-
-Return ONLY valid JSON.
+- Return ONLY valid JSON
 
 Format:
 {
@@ -166,7 +137,7 @@ assist_prompt = PromptTemplate(
     template="""
 You are a calm emergency assistant.
 
-Use ONLY the trusted safety guidelines below:
+Use ONLY:
 {context}
 
 Chat history:
@@ -176,10 +147,9 @@ User message:
 {message}
 
 Instructions:
-- Give short, clear steps
-- 2–4 steps only
-- Prioritize safety
-- Be calm
+- 2–4 steps
+- Clear & calm
+- Life-saving priority
 
 Respond in numbered steps only.
 """
@@ -204,27 +174,29 @@ def home():
 # =========================
 @app.post("/agent")
 def run_agent(input: Input):
-    memory = get_memory(input.user_id)
-
-    chain = agent_prompt | llm | StrOutputParser()
-
-    chat_history = memory.load_memory_variables({}).get("chat_history", "")
-
-    result = chain.invoke({
-        "message": input.message,
-        "chat_history": chat_history,
-        "allowed_occupations": ALLOWED_OCCUPATIONS
-    })
-
-    memory.save_context(
-        {"input": input.message},
-        {"output": result}
-    )
-
     try:
+        memory = get_memory(input.user_id)
+
+        chain = agent_prompt | llm | StrOutputParser()
+
+        chat_history = memory.load_memory_variables({}).get("chat_history", "")
+
+        result = chain.invoke({
+            "message": input.message,
+            "chat_history": chat_history,
+            "allowed_occupations": ALLOWED_OCCUPATIONS
+        })
+
+        memory.save_context(
+            {"input": input.message},
+            {"output": result}
+        )
+
         json_text = extract_json(result)
         parsed = json.loads(json_text)
-    except:
+
+    except Exception as e:
+        print("❌ AGENT ERROR:", str(e))
         parsed = {
             "intent": "emergency",
             "occupation": "",
@@ -249,25 +221,37 @@ def run_agent(input: Input):
 # =========================
 @app.post("/assist")
 def assist_user(input: AssistInput):
-    memory = get_memory(input.user_id)
+    try:
+        memory = get_memory(input.user_id)
 
-    chain = assist_prompt | llm | StrOutputParser()
+        chain = assist_prompt | llm | StrOutputParser()
 
-    chat_history = memory.load_memory_variables({}).get("chat_history", "")
+        chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
-    context = get_context(input.message, llm)
+        context = get_context(input.message, llm)
 
-    result = chain.invoke({
-        "message": input.message,
-        "chat_history": chat_history,
-        "context": context
-    })
+        result = chain.invoke({
+            "message": input.message,
+            "chat_history": chat_history,
+            "context": context
+        })
 
-    memory.save_context(
-        {"input": input.message},
-        {"output": result}
-    )
+        memory.save_context(
+            {"input": input.message},
+            {"output": result}
+        )
 
-    return {
-        "assistant_message": result
-    }
+        return {"assistant_message": result}
+
+    except Exception as e:
+        print("❌ ASSIST ERROR:", str(e))
+        return {"assistant_message": "Stay calm. Help is on the way."}
+
+# =========================
+# 🚀 RUN FOR RENDER (CRITICAL)
+# =========================
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
