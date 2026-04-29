@@ -1,7 +1,7 @@
 from rag import get_context
 from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -15,11 +15,14 @@ load_dotenv()
 app = FastAPI()
 
 # =========================
-# ✅ LLM
+# ✅ LLM (OPENAI)
 # =========================
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GOOGLE_API_KEY")
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    temperature=0.2,
+    max_retries=2,
+    timeout=10
 )
 
 # =========================
@@ -72,25 +75,21 @@ FALLBACK_MAPPING = {
 
 def validate_occupation(occupation: str):
     if not occupation:
-        return "paramedic"  # safe default
+        return "paramedic"
 
     occupation = occupation.strip()
 
-    # ✅ exact match
     if occupation in ALLOWED_OCCUPATIONS:
         return occupation
 
-    # ✅ fallback mapping
     lower = occupation.lower()
     if lower in FALLBACK_MAPPING:
         return FALLBACK_MAPPING[lower]
 
-    # ✅ fuzzy fallback (contains match)
     for allowed in ALLOWED_OCCUPATIONS:
         if lower in allowed.lower():
             return allowed
 
-    # ✅ final fallback
     return "paramedic"
 
 # =========================
@@ -126,9 +125,6 @@ Tasks:
    - emergency OR non_emergency
 
 2. Extract occupation ONLY if EXPLICITLY mentioned in user message
-   Examples:
-   - "call doctor" → doctor
-   - "need police" → police
 
 3. If occupation NOT explicitly mentioned:
    - occupation = ""
@@ -138,29 +134,30 @@ Tasks:
    - is_occupation_provided = true
 
 5. Determine crisis_type:
-   - medical → injury, illness
-   - fire → fire, burning
-   - accident → crash
-   - crime → theft, attack
-   - natural_disaster → flood, earthquake
+   - medical
+   - fire
+   - accident
+   - crime
+   - natural_disaster
 
 Rules:
 - NEVER guess occupation
-- NEVER infer occupation from crisis_type
-- ONLY use occupation if clearly written in user message
+- NEVER infer occupation
+- ONLY use occupation if clearly written
 
 Return ONLY valid JSON.
 
 Format:
-{{
+{
  "intent": "",
  "occupation": "",
  "crisis_type": "",
  "is_occupation_provided": true,
  "is_valid_request": true
-}}
+}
 """
 )
+
 # =========================
 # ✅ ASSIST PROMPT
 # =========================
@@ -179,16 +176,10 @@ User message:
 {message}
 
 Instructions:
-- Give short, clear, step-by-step safety instructions
-- Be calm and reassuring
-- Prioritize life-saving steps
-- Keep response 2–4 steps
-- If context is missing, still give safe general advice
-
-Do NOT:
-- hallucinate
-- give long paragraphs
-- repeat instructions
+- Give short, clear steps
+- 2–4 steps only
+- Prioritize safety
+- Be calm
 
 Respond in numbered steps only.
 """
@@ -242,7 +233,6 @@ def run_agent(input: Input):
             "is_valid_request": True
         }
 
-    # ✅ FIXED LOGIC (INSIDE FUNCTION)
     occupation = parsed.get("occupation", "").strip()
 
     if occupation:
@@ -253,6 +243,7 @@ def run_agent(input: Input):
         parsed["is_occupation_provided"] = False
 
     return parsed
+
 # =========================
 # ✅ ASSIST ENDPOINT
 # =========================
@@ -264,10 +255,7 @@ def assist_user(input: AssistInput):
 
     chat_history = memory.load_memory_variables({}).get("chat_history", "")
 
-    # 🔥 RAG CONTEXT
     context = get_context(input.message, llm)
-
-    print("🔍 CONTEXT:", context[:300])
 
     result = chain.invoke({
         "message": input.message,
